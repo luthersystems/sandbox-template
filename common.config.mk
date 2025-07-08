@@ -13,21 +13,20 @@ SERVICE_DIR=portal
 
 # The makefiles use docker images to build artifacts in this project.  These
 # variables configure the images used for builds.
+# https://github.com/luthersystems/buildenv
 BUILDENV_TAG=v0.0.92
 
 # These variables control the version numbers for parts of the Luther platform
 # and should be kept up-to-date to leverage the latest platform features.
 # See release notes: https://docs.luthersystems.com/luther/platform/release-notes
-#SUBSTRATE_VERSION=v2.205.6
-#SUBSTRATE_VERSION=v2.205.11-SNAPSHOT.3-06e4528d
 SUBSTRATE_VERSION=v2.205.13
 CC_VERSION=${SUBSTRATE_VERSION}
-#CC_VERSION=v2.205.11-SNAPSHOT.3-06e4528d
 CHAINCODE_VERSION=${CC_VERSION}
 VERSION_SUBSTRATE=${CC_VERSION} # is this needed
 SHIROCLIENT_VERSION=${SUBSTRATE_VERSION}
 CONNECTORHUB_VERSION=${SUBSTRATE_VERSION}
 SHIROTESTER_VERSION=${SUBSTRATE_VERSION}
+# https://github.com/luthersystems/fabric-network-builder
 NETWORK_BUILDER_VERSION=v0.0.2
 MARTIN_VERSION=v0.1.0
 
@@ -48,6 +47,6 @@ GONOSUMDB ?= ${GOPRIVATE}
 
 # These variables configure the Hyperledger Fabric image versions for running
 # the full test network.
-FABRIC_IMAGE_TAG=2.5.9
+FABRIC_IMAGE_TAG=2.5.13
 FABRIC_CA_IMAGE_TAG=1.5.12
 BASE_IMAGE_TAG=0.4.22

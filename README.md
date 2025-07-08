@@ -3,55 +3,78 @@
 This repository contains a working starter kit for developers to modify and
 specialize to their specific use case.
 
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/luthersystems/sandbox?quickstart=1)
+
+## Local Setup
+
+Once you've cloned the repo, run:
+
+```sh
+make setup
+```
+
+To download the docs and complete the local setup.
+
 ## High-level File System Structure
 
 _Application Specific Code_: Add your specific process operations code to
 the `phylum/` directory.
 
-_Application Templates_: Edit the template code in `oracle/` and `api/` to
-specialize for your use case.
+\_Application Starter Code: Edit the example template code in `portal/` and
+`api/` to specialize for your use case.
 
 _Platform_: The remaining files and directories are platform related code
 that should not be modified.
 
-[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/luthersystems/sandbox?quickstart=1)
-
 ## Component Diagram
 
 ```asciiart
-                     FE Portal
-                        +
-                        |
-         +--------------v---------------+
-         |                              +<----+ Swagger Specification:
-         |        Middleware API        |       api/swagger/oracle.swagger.json
-         +--------------+---------------+
-         |  Middleware Portal Service   |
-         |             portal/          |
-         +------------------+-----------+
-                            |
-                   JSON-RPC |
-               +------------v-----------+
-               |  shiroclient gateway   |
-               |  substrate/shiroclient |
-               +-------------+----------+
-                             |
-                             | JSON-RPC
- +---------------------------v--------------------------+
- |              Common Operations Script                |
- |                    phylum/                           |
- +------------------------------------------------------+
- |       Substrate (Common Operations Script Runtime)   |
- +------------------------------------------------------+
- |          Distributed Systems Services (fabric)       |
- +------------------------------------------------------+
+
+                      +------------------+
+                      |    FE Portal     |
+                      +--------+---------+
+                               |
+                               v
+                      +--------+---------+
+                      |  Middleware API  | <---- Swagger:
+                      +--------+---------+       api/swagger/oracle.swagger.json
+                               |
+                      +--------v---------+
+                      |   Portal Service |
+                      |  (./portal/)     |
+                      +--------+---------+
+                               |
+                            JSON-RPC
+                               |
+                      +--------v---------+
+                      |   Shiroclient    |
+                      |   (gateway)      |
+                      +--------+---------+
+                               |
+                            JSON-RPC
+                               |
+       +-----------------------v-----------------------+
+       |       Common Operations Script (Phylum)       |
+       |               ./phylum/README.md              |
+       +-----------------------+-----------------------+
+                               |
+       +-----------------------v-----------------------+
+       |  Substrate Runtime (ELPS interpreter, state)  |
+       +-----------------------+-----------------------+
+                               |
+       +-----------------------v-----------------------+
+       |     Distributed Systems Layer (Fabric)        |
+       |               ./fabric/README.md              |
+       +-----------------------------------------------+
 ```
 
 This repo includes an end-to-end "hello world" application described below.
 
 ## Luther Documentation
 
-Check out the [docs](https://docs.luthersystems.com).
+Check out the [docs](https://docs.luthersystems.com) on our website.
+
+Run `make init-docs` and the docs are available [here](./docs/README.md).
 
 ## Getting Started
 
@@ -124,6 +147,20 @@ Run `make` to build all the services:
 make
 ```
 
+## "Hello World" Application
+
+This repo includes a small application for managing an insurance claim. It
+serves a [JSON API](api/srvpb/v1/oracle.swagger.json) that provides endpoints to:
+
+1. create a new insurance claim
+2. add a claimant to the claim
+3. retrieve claim details
+
+> To simplify the sandbox, we have omitted authentication which we handle
+> using [lutherauth](https://docs.luthersystems.com/luther/application/modules/lutherauth).
+> Authorization is implemented at the application layer over tokens issued by
+> lutherauth.
+
 ### Running the Application
 
 First we'll run the sample application with a local instance of the Luther
@@ -153,121 +190,21 @@ make down
 
 Running `docker ps` again will show all the containers have been removed.
 
-### Application tracing (OpenTelemetry)
-
-There is support for tracing of the application and the Luther platform using
-the OpenTelemetry protocol. Each can optionally be configured by setting an
-environment variable to point at an OTLP endpoint (e.g. a Grafana agent). When
-configured, trace spans will be created at key layers of the stack and delivered
-to the configured endpoint.
-
-You can test tracing locally by setting the following env variables:
-
-```bash
-export SANDBOX_ORACLE_OTLP_ENDPOINT=http://tempo:4317
-export SHIROCLIENT_GATEWAY_OTLP_TRACER_ENDPOINT=http://tempo:4317
-export CHAINCODE_OTLP_TRACER_ENDPOINT=http://tempo:4317
-```
-
-And bringing up observability:
-
-```
-make observability-up
-```
-
-Login to the local [grafana](http://localhost:3000/) with username: admin,
-password: admin.
-
-Click "Explore" and select "Tempo" as the data source. Query `{}` to list
-all traces.
-
-#### ELPS trace spans
-
-Phylum endpoints defined with `defendpoint` will automatically receive a span
-named after the endpoint. Other functions in the phylum can be traced by adding
-a special ELPS doc keyword:
-
-```lisp
-(defun trace-this ()
-  "@trace"
-  (slow-function1)
-  (slow-function2))
-```
-
-Custom span names are also supported as follows:
-
-```
-"@trace{ custom span name }"
-```
-
-### Run Distributed Systems Explorer
-
-To examine a graphical UI for the transactions and blocks and look at
-the details of the work the sandbox network has done, build the
-Explorer. With the full network running, run:
-
-```bash
-make explorer
-```
-
-This creates a web app which will be visible on `localhost:8090`. The default
-login credentials are username: `admin`, password `adminpw`. Bringing up the
-network should produce some transactions and blocks, and `make integration` will
-generate more activity, which can be viewed in the web app.
-
-If the `make` command fails, or if the Explorer runs but no new activity is
-detected, it has most likely failed to authenticate; run
-
-```bash
-make explorer-clean
-make explorer-up
-```
-
-To wipe out the pre-existing database and recreate it empty, then re-build the
-Explorer. This will reconnect it to the current network.
-
-## "Hello World" Application
-
-This repo includes a small application for managing account balances. It serves
-a JSON API that provides endpoints to:
-
-1. create an account with a balance
-2. look up the balance for an account
-3. transfer between two accounts
-
-> To simplify the sandbox, we have omitted authentication which we handle
-> using [lutherauth](https://docs.luthersystems.com/luther/application/modules/lutherauth).
-> Authorization is implemented at the application layer over tokens issued by
-> lutherauth.
-
 ### Directory Structure
 
-Overview of the directory structure
+Overview of the directory structure:
 
-```asciiart
-build/:
- Temporary build artifacts (do not check into git).
-common.config.mk:
- User-defined settings & overrides across the project.
-api/:
- API specification and artifacts. See README.
-compose/:
- Configuration for docker compose networks that are brought up during
- testing. These configurations are used by the existing Make targets
- and the compose python.
-fabric/:
- Configuration and scripts to launch a fabric network locally. Not used in
-    codespaces.
-portal/:
- The portal service responsible for serving the REST/JSON APIs and
- communicating with other microservices.
-phylum/:
- Business logic that is executed in common script using the platform (substrate).
-scripts/:
- Helper scripts for the build process.
-tests/:
- End-to-end API tests that use martin.
-```
+| Directory          | Description                                                              |
+| ------------------ | ------------------------------------------------------------------------ |
+| `build/`           | Temporary build artifacts (do not check into Git)                        |
+| `common.config.mk` | User-defined settings and overrides across the project                   |
+| `api/`             | API specification and artifacts (see `api/README.md`)                    |
+| `compose/`         | Docker Compose configurations used during testing and `make` targets     |
+| `fabric/`          | Local distributed systems network configuration (not used in Codespaces) |
+| `portal/`          | REST/JSON middleware service and app logic                               |
+| `phylum/`          | Business logic written in Common Operations Script (ELPS)                |
+| `scripts/`         | Helper scripts for the build process                                     |
+| `tests/`           | End-to-end tests using `martin`, Luther’s e2e testing tool               |
 
 ### Developing the application
 
@@ -289,21 +226,22 @@ sandbox phylum's [documentation](phylum/).
 
 There are 3 main types of tests in this project:
 
-1. Phylum _unit_ tests. These tests excercise busines rules and logic around
+1. Phylum _unit_ tests. These tests exercise business rules and logic around
    storage of smart contract data model entities. More information about
    writing and running unit tests can be found in the phylum
-   [documentation](phylum/).
+   [documentation](phylum/README.md).
+   See the example [claims test](./phylum/claim_test.lisp).
 
 2. Oracle _functional_ tests. These tests exercise API endpoints and their
    connectivity to the phylum application layer. More information about writing
    and running functional tests can be found in the oracle
-   [documentation](portal/).
+   [documentation](portal/README.md).
 
 3. End-To-End _integration_ tests. These tests use the `martin` tool. These
    tests exercise realistic end-user functionality of the oracle REST/JSON APIs
    using [Postman](https://www.postman.com/product/api-client/) under the hood.
    More information about writing and running integration tests can be found in
-   the test [documentation](tests/)
+   the test [documentation](tests/README.md)
 
 After making some changes to the phylum's business logic, the oracle middleware,
 or the API it is a good idea to test those changes. The quickest integrity
@@ -328,6 +266,8 @@ against a real network of docker containers. As done in the Getting Started
 section, this will require running `make up` to create a network and `make
 integration` to actually run the tests.
 
+> `make mem-up` is a faster alternative suitable for development.
+
 ```bash
 make up
 make integration
@@ -343,6 +283,9 @@ running fabric network with the following shell command:
 ```bash
 (cd fabric && make init)
 ```
+
+> This command rebuilds and re-installs the business logic on the running
+> Fabric network without restarting the containers.
 
 This uses the OTA Update module to immediately install the new business logic on
 to the fabric network. The upgrade here is done the same way devops engineers
@@ -383,6 +326,89 @@ platform are cleaned up by running the command:
 ```bash
 make down
 ```
+
+## Distributed Systems
+
+See [fabric/README.md](./fabric/README.md) for an overview of the distributed systems
+architecture that powers the platform.
+
+## Advanced Usage
+
+Once you're comfortable with the basic development workflow, checkout the
+more advanced features.
+
+### Application tracing (OpenTelemetry)
+
+There is support for tracing of the application and the Luther platform using
+the OpenTelemetry protocol. Each can optionally be configured by setting an
+environment variable to point at an OTLP endpoint (e.g. a Grafana agent). When
+configured, trace spans will be created at key layers of the stack and delivered
+to the configured endpoint.
+
+You can test tracing locally by setting the following env variables:
+
+```bash
+export SANDBOX_ORACLE_OTLP_ENDPOINT=http://tempo:4317
+export SHIROCLIENT_GATEWAY_OTLP_TRACER_ENDPOINT=http://tempo:4317
+export CHAINCODE_OTLP_TRACER_ENDPOINT=http://tempo:4317
+```
+
+And bringing up observability:
+
+```
+make observability-up
+```
+
+Login to the local [grafana](http://localhost:3000/) with username: admin,
+password: admin.
+
+Click "Explore" and select "Tempo" as the data source. Query `{}` to list
+all traces.
+
+#### ELPS trace spans
+
+Phylum endpoints defined with `defendpoint` will automatically receive a span
+named after the endpoint. Other functions in the phylum can be traced by adding
+a special [ELPS](https://github.com/luthersystems/elps) doc keyword:
+
+```lisp
+(defun trace-this ()
+  "@trace"
+  (slow-function1)
+  (slow-function2))
+```
+
+Custom span names are also supported as follows:
+
+```
+"@trace{ custom span name }"
+```
+
+### Run Distributed Systems Explorer
+
+To examine a graphical UI for the transactions and blocks and look at
+the details of the work the sandbox network has done, build the
+Explorer. With the full network running, run:
+
+```bash
+make explorer
+```
+
+This creates a web app which will be visible on `localhost:8090`. The default
+login credentials are username: `admin`, password `adminpw`. Bringing up the
+network should produce some transactions and blocks, and `make integration` will
+generate more activity, which can be viewed in the web app.
+
+If the `make` command fails, or if the Explorer runs but no new activity is
+detected, it has most likely failed to authenticate; run
+
+```bash
+make explorer-clean
+make explorer-up
+```
+
+To wipe out the pre-existing database and recreate it empty, then re-build the
+Explorer. This will reconnect it to the current network.
 
 ## Platform Releases
 
