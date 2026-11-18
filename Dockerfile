@@ -11,6 +11,12 @@ ARG SERVICE_BASE_IMAGE
 
 FROM $BUILD_IMAGE AS build
 
+# buildenv >= v0.1.x images default to the non-root `build` user (buildenv
+# #78), which cannot write the root-owned /src that COPY creates. This is a
+# throwaway build stage (only the compiled binary ships), so build as root; the
+# prod stage runs as nobody.
+USER root
+
 # Copy source code into the build container
 COPY . /src
 WORKDIR /src
@@ -30,6 +36,11 @@ FROM $SERVICE_BASE_IMAGE AS prod
 
 # Copy the compiled binary into the final container
 COPY --from=build /src/app /opt/app
+
+# service-base-alpine already runs as nobody; restate it so this file, read
+# on its own, says the service does not run as root (Trivy DS-0002), and a
+# base that changed its default user could not switch the service silently.
+USER nobody
 
 # Entrypoint: run the app using tini for proper signal handling
 ENTRYPOINT ["tini", "--", "/opt/app"]
