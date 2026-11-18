@@ -5,11 +5,10 @@ on:
   pull_request:
     branches:
       - main
-  # The merge queue is on for main: the queue waits for every required check
-  # on the merged result, so this workflow must run there too.
+  # If the merge queue is turned on for main, the queue waits for every
+  # required check on the merged result, so this workflow must run there too.
   merge_group:
   # Also test main as merged; the pull_request runs only test each PR branch.
-  # release-tag.yml checks this push run before it tags a commit.
   push:
     branches:
       - main
