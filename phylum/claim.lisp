@@ -47,8 +47,8 @@
 ;; connector events. These must match the connectorhub.yaml definitions.
 (set 'sys-msp-map
   ;; map from system names to responsible connector MSP IDs
-  ;; TODO: for now it's all 1 connector, but in final version each connector
-  ;; is run by a separate org (participant).
+  ;; In this starter kit one org runs every connector. In a real network
+  ;; each connector is run by a separate org (participant): set its MSP ID here.
   (sorted-map
     "CLAIMS_PORTAL_UI"   "Org1MSP"
     "EQUIFAX_ID_VERIFY"  "Org1MSP"
