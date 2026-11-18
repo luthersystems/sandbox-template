@@ -8,6 +8,8 @@ FROM mcr.microsoft.com/vscode/devcontainers/base:0-${VARIANT}
 RUN apt-get update && export DEBIAN_FRONTEND=noninteractive \
     && apt-get -y install --no-install-recommends time
 
-# Run as the image's non-root user, the same one devcontainer.json connects
-# as (remoteUser), so the image does not default to root (Trivy DS-0002).
+# Run the container as the base image's non-root vscode user, the same user
+# devcontainer.json's remoteUser already connects as (Trivy DS-0002). The
+# devcontainer features install as root in their own layer and then switch
+# back to this user; vscode has passwordless sudo for anything that needs root.
 USER vscode

@@ -1,24 +1,26 @@
-# Dependabot version updates (the quality gate audit of 2026-11-18). Every
-# ecosystem is grouped into one PR a month so the updates stay reviewable
-# with little noise. Dependabot security updates are a separate repository
-# setting, which this file does not change.
 version: 2
 updates:
   - package-ecosystem: "gomod"
-    directories:
-      - "/"
+    directory: "/"
     schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 5
+      interval: "weekly"
     groups:
       go-deps:
         patterns: ["*"]
+    ignore:
+      # GO-2026-6443: grpc v1.84.0 is vulnerable and no released fix exists
+      # (fixed only in 1.85.0-dev). Stay on v1.83.2 until v1.84.1+/v1.85.0 ships.
+      - dependency-name: "google.golang.org/grpc"
+        versions: ["1.84.0"]
+      # grpc-gateway v2.31.0 requires grpc v1.84.0, so the rule above alone
+      # cannot hold grpc back (#132 bumped it through grpc-gateway). Drop both
+      # rules together once a fixed grpc release ships.
+      - dependency-name: "github.com/grpc-ecosystem/grpc-gateway/v2"
+        versions: [">= 2.31.0"]
   - package-ecosystem: "github-actions"
-    directories:
-      - "/"
+    directory: "/"
     schedule:
-      interval: "monthly"
-    open-pull-requests-limit: 5
+      interval: "weekly"
     groups:
       actions:
         patterns: ["*"]

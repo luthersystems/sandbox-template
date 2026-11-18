@@ -6,6 +6,13 @@ peer-name: peer0
 peer-endpoint: "peer0.org1.luther.systems:7051"
 channel-name: luther
 chaincode-id: sandbox
+# The scheduler expires the claim flow's connector deadlines
+# (:connector-timeout in phylum/claim.lisp). Without it a request whose reply
+# never comes leaves the claim waiting for ever. The hub signs as Org1MSP,
+# which the flow lists in :admin-from, and the interval is well under the
+# flow's shortest deadline (1h).
+scheduler:
+  interval: 30s
 connectors:
   - name: EMAIL
     mock: true
@@ -26,12 +33,10 @@ connectors:
   - name: EQUIFAX_ID_VERIFY
     mock: true
     equifax:
-      aml_url: localhost
-      full_report_url: localhost
-      secrets_manager_key: todo-anr
-      region: EU_WEST_2
-      logon_url: localhost
-      eidv_url: localhost
+      host: localhost
+      # connectorhub v0.0.28+ requires these, even for a mock.
+      client_id: mock-client-id
+      client_secret: mock-client-secret
 
   - name: INVOICE_NINJA
     mock: true
@@ -49,4 +54,6 @@ connectors:
 
   - name: STRIPE_PAYMENT
     mock: true
-    stripe: {}
+    stripe:
+      # connectorhub v0.0.28+ requires it, even for a mock.
+      secret: mock-secret

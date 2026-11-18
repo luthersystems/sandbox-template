@@ -16,8 +16,11 @@ BUILD_IMAGE_PROJECT_DIR=/go/src/${PROJECT_PATH}
 BUILD_WORKDIR=${BUILD_IMAGE_PROJECT_DIR}/${BUILD_IMAGE_SERVICE_DIR}
 
 DOCKER_IMAGE=${PROJECT}/${SERVICE}
-
 DOCKER_IMAGE_DUMMY=$(call IMAGE_DUMMY,${DOCKER_IMAGE}/${VERSION})
+
+FQ_STATIC_IMAGE=$(call FQ_DOCKER_IMAGE,${DOCKER_IMAGE},${SERVICE})
+FQ_STATIC_IMAGE_DUMMY=$(call PUSH_DUMMY,${FQ_DOCKER_IMAGE}/${BUILD_VERSION}${TAG_SUFFIX})
+FQ_MANIFEST_DUMMY=$(call MANIFEST_DUMMY,${FQ_STATIC_IMAGE}/${BUILD_VERSION}${TAG_SUFFIX})
 
 GO_SOURCE_FILES=$(shell find ${PROJECT_REL_DIR} -name '*.go' | grep -v '/vendor/')
 
@@ -26,6 +29,8 @@ GO_PKG_VOLUME_DUMMY=${PROJECT_REL_DIR}/$(call DUMMY_TARGET,volume,${GO_PKG_VOLUM
 
 GO_BUILD_TAGS ?= osusergo,netgo,cgo,timetzdata
 GO_BUILD_FLAGS="-installsuffix ${GO_BUILD_TAGS} -tags ${GO_BUILD_TAGS} -buildvcs=false"
+
+HOST_GO_ENV=SUBSTRATEHCP_FILE=${SUBSTRATEHCP_FILE}
 
 .PHONY: default
 default: docker-build
@@ -59,6 +64,18 @@ ${DOCKER_IMAGE_DUMMY}: ${GO_SOURCE_FILES} Makefile ${PROJECT_REL_DIR}/common.mk 
 		-f ${PROJECT_REL_DIR}/Dockerfile ${PROJECT_REL_DIR}
 	${TOUCH} $@
 
+# harden-env prints the kit pin and the image ref for the shared CI check,
+# luthersystems/.github/actions/harden-check (luthersystems/.github#6). CI
+# writes them to the step outputs, so the kit pin stays in common.config.mk
+# and the image name stays in the makefiles. The check logic lives in the
+# action, one copy for every repo, so a fix reaches this repo when v1 moves.
+# service-base-alpine runs the kit when buildenv builds it; the check covers
+# the layers this repo adds on top (luthersystems/buildenv#163).
+.PHONY: harden-env
+harden-env:
+	@echo "kit=${HARDEN_KIT}"
+	@echo "image=${DOCKER_IMAGE}:${VERSION}"
+
 ${GO_PKG_DUMMY}:
 	${DOCKER} volume inspect ${GO_PKG_VOLUME} || ${DOCKER} volume create ${GO_PKG_VOLUME}
 	mkdir -p $(dir $@)
@@ -67,3 +84,35 @@ ${GO_PKG_DUMMY}:
 .PHONY: host-go-env
 host-go-env:
 	@echo export "${HOST_GO_ENV}"
+
+.PHONY: push
+push: ${FQ_STATIC_IMAGE_DUMMY}
+	@
+
+# DOCKER_IMAGE exists with a tag VERSION and BUILD_VERSION but FQ_STATIC_IMAGE
+# only has a BUILD_VERSION tag.  Ideally perhaps DOCKER_IMAGE would only have a
+# BUILD_VERSION tag but the git hash in the BUILD_VERSION will blow makefile
+# dependency caching for DUMMY targets and cause additional unnecessary builds
+# during development.
+${FQ_STATIC_IMAGE_DUMMY}: ${DOCKER_IMAGE_DUMMY}
+	${DOCKER} tag ${DOCKER_IMAGE}:${VERSION} ${DOCKER_IMAGE}:${BUILD_VERSION}${TAG_SUFFIX}
+	${DOCKER} tag ${DOCKER_IMAGE}:${VERSION} ${FQ_STATIC_IMAGE}:${BUILD_VERSION}${TAG_SUFFIX}
+	${DOCKER} push ${FQ_STATIC_IMAGE}:${BUILD_VERSION}${TAG_SUFFIX}
+	${MKDIR_P} $(dir $@)
+	${TOUCH} $@
+
+.PHONY: push-manifests
+push-manifests: ${FQ_MANIFEST_DUMMY}
+	@
+
+${FQ_MANIFEST_DUMMY}:
+	${DOCKER} buildx imagetools create \
+		--tag ${FQ_STATIC_IMAGE}:latest \
+		${FQ_STATIC_IMAGE}:${BUILD_VERSION}-arm64 \
+		${FQ_STATIC_IMAGE}:${BUILD_VERSION}-amd64
+	${DOCKER} buildx imagetools create \
+		--tag ${FQ_STATIC_IMAGE}:${BUILD_VERSION} \
+		${FQ_STATIC_IMAGE}:${BUILD_VERSION}-arm64 \
+		${FQ_STATIC_IMAGE}:${BUILD_VERSION}-amd64
+	${MKDIR_P} $(dir $@)
+	${TOUCH} $@

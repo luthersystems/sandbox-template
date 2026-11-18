@@ -1,11 +1,11 @@
 ;; Copyright © 2025 Luther Systems, Ltd. All right reserved.
 ;; ----------------------------------------------------------------------------
 ;;
-;; This file contains unit tests for the claim connector object.
-;; It exercises core functionality including:
-;; - Claim creation and persistence
-;; - State transitions and event triggering
-;; - Connector event simulation and response handling
+;; Unit tests for the claim flow in claim.lisp.
+;;
+;; The flow-test package runs each call as its own simulated transaction,
+;; as the network would: a start, an input, and one Connector Hub reply per
+;; step. So these tests check the same transaction boundaries as production.
 ;;
 ;; Run with:
 ;;   make test
@@ -13,11 +13,7 @@
 (in-package 'sandbox)
 (use-package 'testing)
 
- ;; overwrite return from cc:creator such that tests can complete
-(set 'cc:creator (lambda () "Org1MSP"))
-
-;; mk-test-claimant returns a map with mock claimant details.
-;; Used to simulate an inbound claim submission.
+;; mk-test-claimant returns a claimant as the oracle sends it (proto JSON).
 (defun mk-test-claimant ()
   (sorted-map "account_number"    ""
               "account_sort_code" ""
@@ -31,120 +27,84 @@
               "address_post_town" "Westbury"
               "nationality"       "NATIONALITY_GB"))
 
-;; populate-test-claimant! mutates the given claim to add a test claimant.
-;; Used to simulate user input collected from the portal.
-(defun populate-test-claimant! (claim)
-  (let* ([claimant (mk-test-claimant)])
-    (assoc! claim "claimant" claimant)))
+;; mk-test-details returns the body of a create_claim request.
+(defun mk-test-details ()
+  (sorted-map "date_of_accident" "2024-01-15"
+              "damage_amount"    "500000"
+              "claim_reason"     "Car accident due to adverse weather conditions."))
 
-;; Basic storage test for claim lifecycle:
-;; - Ensures claim can be created
-;; - Ensures it has valid state and ID
-;; - Verifies it can be fetched from storage
-(test "claims"
-  (let* ([claim (create-claim)]
-         [_ (assert (not (nil? claim)))])
-    (assert (not (nil? (get claim "state"))))
-    (assert (not (nil? (get claim "claim_id"))))
-    (let*
-      ([claim-id (get claim "claim_id")]
-       [got-claim (claims 'get claim-id)])
-      (assert (not (nil? got-claim))))))
+;; claim-steps lists the connector steps of the claim flow, in order. A test
+;; that walks the flow checks each label, so a reordered step fails with
+;; the name of the step.
+(set 'claim-steps
+     (list "verify-identity" "collect-policy" "verify-policy" "issue-invoice"
+           "approve-invoice" "email-invoice" "pay"))
 
-(use-package 'connector)
+;; start-test-claim starts a claim as Org1MSP and returns its run ID.
+(defun start-test-claim (request-key)
+  (flow-test:as "Org1MSP")
+  (let ([(sorted-map "run_id" run) (flow-test:start 'claim request-key (mk-test-details))])
+    run))
 
-;;
-;; helper functions to interrogate the state after running the tests.
-;;
+;; claim-view returns the run as get_claim returns it.
+(defun claim-view (run)
+  (flow-test:run 'claim run))
 
-;;;; get-connector-event-req retrieves the connector request from state using
-;; the given connector event context.
-(defun get-connector-event-req (ctx)
-  (let* ([key (get ctx "key")]
-         [pdc (get ctx "pdc")]
-         [event-bytes (if pdc 
-                        (cc:storage-get-private pdc key) 
-                        (cc:storage-get key))]
-         [event (json:load-bytes event-bytes)])
-    event))
+(test "a new claim waits for the claimant"
+  ;; A binding pattern takes the view apart. A view without one of these
+  ;; keys fails the test with a match-error that names the pattern.
+  (let* ([run (start-test-claim "k1")]
+         [(sorted-map "state" state
+                      "label" label
+                      "vars" (sorted-map "details" details))
+          (claim-view run)])
+    (assert-string= "waiting" state)
+    (assert-string= "claimant" label)
+    (assert-equal (mk-test-details) details)))
 
-;;;; get-connector-event-ctx looks up the event context given a request ID.
-;; Used to inspect connector request metadata.
-(defun get-connector-event-ctx (rid)
-  (get (connector-handlers 'get-callback-state rid) "ctx"))
+(test "a claim runs every step to done"
+  (let* ([run (start-test-claim "k2")])
+    (flow-test:input 'claim 'claimant run (mk-test-claimant))
+    (map 'list
+         (lambda (step)
+           (assert-string= step (get (claim-view run) "label"))
+           (flow-test:reply 'claim run (sorted-map)))
+         claim-steps)
+    (let* ([(sorted-map "state" state
+                        "result" (sorted-map "status" status
+                                             "claimant" claimant
+                                             "details" details))
+            (claim-view run)])
+      (assert-string= "done" state)
+      (assert-string= "STATUS_PAID" status)
+      (assert-equal (mk-test-claimant) claimant)
+      (assert-equal (mk-test-details) details))))
 
-;; get-connector-event-recurse recursively walks all events in the current
-;; transaction metadata and builds a map of connector requests by index.
-;; Used to extract all raised events for test assertions.
-(defun get-connector-event-recurse (metadata i output)
-  (let* ([event-ref-key (format-string "$connector_events:{}" i)])
-    (when (key? metadata event-ref-key)
-      (let* ([event-ref-json (get metadata event-ref-key)]
-             [event-ref (json:load-string event-ref-json)]
-             [rid (get event-ref "rid")]
-             [ctx (get-connector-event-ctx rid)]
-             [req (get-connector-event-req ctx)])
-        (assoc! req "request_id" rid)
-        (assoc! output (to-string i) req)
-        (get-connector-event-recurse metadata (+ i 1) output)))))
+(test "a start is idempotent per request key"
+  (let* ([run (start-test-claim "k3")]
+         [again (start-test-claim "k3")])
+    (assert-string= run again)))
 
-;; get-connector-event-reqs returns a vector of all connector requests raised
-;; during the current transaction.
-(defun get-connector-event-reqs ()
-  (let* ([m (get-tx-metadata)]
-         [output (sorted-map)])
-    (get-connector-event-recurse m 0 output)
-    (vals output)))
+(test "a claimant without a required field is refused"
+  (let* ([run (start-test-claim "k4")])
+    (map 'list
+         (lambda (bad)
+           (let* ([gen (get (claim-view run) "gen")]
+                  [refusal (flow-test:rejection 'claim "in:claimant" run bad gen)])
+             (assert-string= "schema" (get refusal "error"))))
+         (list (assoc (mk-test-claimant) "forename" "")
+               (dissoc (mk-test-claimant) "surname")
+               (dissoc (mk-test-claimant) "dob")
+               (dissoc (mk-test-claimant) "nationality")
+               (assoc (mk-test-claimant) "nationality" "GB")))
+    ;; A refused input commits nothing: the claim still waits for it.
+    (assert-string= "claimant" (get (claim-view run) "label"))))
 
-;;
-;; connector tests
-;;
-
-;; start-new-event-loop creates a new claim and triggers the first event.
-;; Used to simulate an end-to-end claim submission.
-(defun start-new-event-loop ()
-  (let* ([claim (create-claim)]) 
-    (cc:debugf (sorted-map "claim" claim) "start-new-event-loop")
-    (assert (not (nil? claim)))
-    (assert (not (nil? (get claim "claim_id"))))
-    (populate-test-claimant! claim)
-    (trigger-claim (get claim "claim_id") (get claim "claimant"))))
-
-;; assert-no-more-events verifies that no connector events remain to process.
-;; Use after all expected events have been handled.
-(defun assert-no-more-events ()
-  (let* ([event-reqs (get-connector-event-reqs)])
-    ;; done, no more events! 
-    (assert-equal (length event-reqs) 0)))
-
-;; process-single-event-empty-response simulates a connectorhub callback with
-;; an empty response body for the first pending event.
-;; Used to advance the state machine during tests.
-(defun process-single-event-empty-response ()
-  (let* ([event-reqs (get-connector-event-reqs)]
-         [_ (assert-equal 1 (length event-reqs))]
-         [req (first event-reqs)]
-         [req-id (get req "request_id")]
-         [resp (sorted-map "request_id" req-id)])
-    ;; simulate a new tx by resetting existing events
-    (connector-events 'reset)
-    ;; simulate the connectorhub callback
-    (connector-handlers 'invoke-handler-with-body resp)))
-
-;; process-event-loop advances the claim state machine by simulating connector
-;; responses across `iters` iterations.
-;;
-;; Parameters:
-;; - iters: number of iterations (connector responses) to simulate
-;; - start: if true, starts a new claim first
-(defun process-event-loop (iters &optional start)
-  (when start (start-new-event-loop))
-  (if (<= iters 0)
-    (assert-no-more-events)
-    (progn
-      (process-single-event-empty-response)
-      (process-event-loop (- iters 1)))))
-
-;; Integration test for full claim processing loop.
-;; Runs 7 connector event cycles from new claim to DONE state.
-(test "test-claim-factory" (process-event-loop 7 true))
+(test "a connector error fails the claim"
+  (let* ([run (start-test-claim "k5")])
+    (flow-test:input 'claim 'claimant run (mk-test-claimant))
+    (flow-test:reply-error 'claim run "equifax unavailable")
+    (let* ([(sorted-map "state" state "error" (sorted-map "label" label))
+            (claim-view run)])
+      (assert-string= "failed" state)
+      (assert-string= "verify-identity" label))))
